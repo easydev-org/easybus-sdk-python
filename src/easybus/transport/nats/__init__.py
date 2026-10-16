@@ -206,12 +206,23 @@ class NatsBus:
             if not any(s == ch or (("*" in s or ">" in s) and _subject_match(s, ch)) for s in subjects):
                 continue
             try:
-                sub = await self._js.subscribe(ch, stream=name)
-                msgs = await sub.fetch(1000, timeout=1)
-                for m in msgs:
-                    env = self._decode_msg(m)
-                    if env is not None:
-                        out.append(env)
+                from nats.js.api import ConsumerConfig, DeliverPolicy
+
+                # A pull consumer (fetch works on it, unlike a push subscription).
+                sub = await self._js.pull_subscribe(
+                    ch,
+                    stream=name,
+                    config=ConsumerConfig(deliver_policy=DeliverPolicy.ALL),
+                )
+                # A fresh ephemeral consumer; drain the retained window.
+                for _ in range(10):
+                    msgs = await sub.fetch(1000, timeout=1)
+                    if not msgs:
+                        break
+                    for m in msgs:
+                        env = self._decode_msg(m)
+                        if env is not None:
+                            out.append(env)
             except Exception:
                 pass
             break
@@ -287,14 +298,17 @@ class NatsBus:
                     entry = await watcher.updates(timeout=2)
                 except asyncio.TimeoutError:
                     return
-                if entry is None:
+                # nats-py yields a StopIterSentinel when the watcher ends.
+                if entry is None or entry.__class__.__name__ == "StopIterSentinel":
                     yield KvEvent(done=True)
+                    continue
+                if not hasattr(entry, "key"):
                     continue
                 yield KvEvent(
                     key=entry.key,
                     value=entry.value.decode("utf-8") if entry.value else "",
                     revision=entry.revision,
-                    deleted=entry.operation is not None and entry.operation.name in ("DEL", "PURGE"),
+                    deleted=_is_deleted(entry.operation),
                     is_update=True,
                     done=False,
                 )
@@ -383,6 +397,7 @@ class NatsInboxSub:
         env = self._bus._decode_msg(m)
         if env is None:
             return None
+        _b = self._bus
 
         class _Msg:
             envelope = env
@@ -396,9 +411,11 @@ class NatsInboxSub:
             def term(self) -> None:
                 async def _t():
                     try:
-                        await self._bus._js.publish(_dlq_subject_for(m.subject), m.data, headers={"Nats-Msg-Id": env.id} if env.id else None)
-                    except Exception:
-                        pass
+                        await _b._js.publish(_dlq_subject_for(m.subject), m.data, headers={"Nats-Msg-Id": env.id} if env.id else None)
+                    except Exception as e:  # noqa: BLE001
+                        import sys
+
+                        print("[easybus] dlq publish failed:", e, file=sys.stderr, flush=True)
                     await m.term()
 
                 asyncio.create_task(_t())
@@ -410,6 +427,15 @@ class NatsInboxSub:
 
     async def close(self) -> None:
         pass
+
+
+def _is_deleted(op) -> bool:
+    """The KV entry operation is a KV_OP enum (or a string); treat DEL/PURGE as
+    deleted."""
+    if op is None:
+        return False
+    name = getattr(op, "name", None) or str(op)
+    return name in ("DEL", "PURGE")
 
 
 def _subject_match(pattern: str, subject: str) -> bool:

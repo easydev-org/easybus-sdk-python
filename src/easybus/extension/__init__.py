@@ -55,6 +55,7 @@ PRESENCE_INTERVAL = 5.0
 
 _CODE_INVALID_ARGUMENT = 1
 _CODE_NOT_FOUND = 2
+_CODE_RETRYABLE = 4
 _CODE_INTERNAL = 6
 
 EASYBUS_FEATURES = ["dlq", "config-kv", "presence", "kv-escaping", "interrupt-abort", "progress", "multitenant"]
@@ -122,6 +123,20 @@ class Config:
     on_config_change: Callable | None = None
     on_lifecycle: Callable | None = None
     on_interrupt: Callable | None = None
+
+
+async def _invoke_execute(fn, args, call_id, session_name, tenant, cancel):
+    """Call a tool handler. Handlers may take 4 args (args, call_id, session,
+    tenant) or 5 (…, cancel) — the cancel event lets a handler abort early."""
+    import inspect
+
+    try:
+        n = len(inspect.signature(fn).parameters)
+    except (TypeError, ValueError):
+        n = 4
+    if n >= 5:
+        return await fn(args, call_id, session_name, tenant, cancel)
+    return await fn(args, call_id, session_name, tenant)
 
 
 def _sanitize_replica_id(id_: str) -> str:
@@ -350,9 +365,15 @@ class Extension:
             return
         session_name = env.session_name or ""
         tenant = env.tenant or subject_tenant(env.ch)
-        res = ToolResult(call_id=call.get("call_id", ""), tool=name)
+        call_id = call.get("call_id", "")
+        # A per-call cancellation event: an interrupt sets it, and a tool that
+        # observes it (via the 5th execute arg) can abort early.
+        cancel = asyncio.Event()
+        if session_name:
+            self.track_inflight(tenant, session_name, call_id, cancel)
+        res = ToolResult(call_id=call_id, tool=name)
         try:
-            data = await spec.execute(call.get("arguments", {}) or {}, call.get("call_id", ""), session_name, tenant)
+            data = await _invoke_execute(spec.execute, call.get("arguments", {}) or {}, call_id, session_name, tenant, cancel)
             if data.content and len(data.content.encode("utf-8")) > MAX_TOOL_CONTENT_BYTES:
                 res.error.CopyFrom(ToolError(code=_CODE_INVALID_ARGUMENT, message=f"tool '{name}' returned {len(data.content.encode('utf-8'))} bytes of text, over the {MAX_TOOL_CONTENT_BYTES}-byte limit; return large data as a file (data.files) instead"))
             elif data.content:
@@ -365,8 +386,12 @@ class Extension:
                     res.object.content_type = data.object["content_type"]
         except TypedError as e:
             res.error.CopyFrom(ToolError(code=_code_from_name(e.code), message=e.message))
+        except asyncio.CancelledError:
+            res.error.CopyFrom(ToolError(code=_CODE_RETRYABLE, message="interrupted"))
         except Exception as e:  # noqa: BLE001
             res.error.CopyFrom(ToolError(code=_CODE_INTERNAL, message=str(e)))
+        finally:
+            self.untrack_inflight(tenant, session_name, call_id)
         from easybus.wire import encode_message
 
         await self._b.publish(reply_to, json.loads(encode_message(res).decode("utf-8")), PublishOpts(tenant=tenant))

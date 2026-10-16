@@ -98,6 +98,21 @@ async def test_tool_content_and_data(nats_server):
 
 
 @pytest.mark.asyncio
+async def test_tool_data(nats_server):
+    a = await connect(nats_server)
+    e = await connect(nats_server)
+    ext = _full_ext(e)
+    await ext.serve()
+    agent = Agent(a)
+    try:
+        d = await agent.call_tool(T, "sess-1", "conf-ext", "add", "c2", {"a": 2, "b": 3})
+        assert d.data == {"sum": 5.0}
+    finally:
+        await ext.close()
+        await a.close()
+
+
+@pytest.mark.asyncio
 async def test_tool_error_mapping(nats_server):
     a = await connect(nats_server)
     e = await connect(nats_server)
