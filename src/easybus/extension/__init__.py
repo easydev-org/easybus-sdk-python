@@ -710,3 +710,6 @@ def _lifecycle_kind_string(kind: int | float | str | None) -> str:
     if isinstance(kind, (int, float)):
         return mapping.get(int(kind), "")
     return kind or ""
+
+# Agent-served file RPCs (filerpc.py) — re-exported for convenience.
+from .filerpc import get_file_via_agent, ingest_file_via_agent  # noqa: E402,F401

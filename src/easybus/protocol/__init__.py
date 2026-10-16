@@ -135,6 +135,31 @@ def session_var_key(tenant: str, ext_id: str, session_name: str, name: str) -> s
     return tenant_kv_key(tenant, f"{ext_id}.{session_token(session_name)}.{name}")
 
 
+# ---- file RPCs (agent-served) ---------------------------------------------
+#
+# A DB-less, store-less extension (no S3 credentials, no agent DB) cannot mint
+# a canonical `file:<code>` on its own, so it asks the AGENT to persist the
+# bytes + metadata via the SAME path as an in-process ingest. The tenant rides
+# the subject (`easybus.<tenant>.file.ingest`) and the envelope, so no separate
+# credential is introduced. BYTES NEVER RIDE THE MESSAGE: the caller first
+# stores the bytes in the transient object store and sends only the reference.
+
+#: The cross-tenant consume wildcard for file.ingest.
+FILE_INGEST_WILDCARD = "easybus.*.file.ingest"
+#: The cross-tenant consume wildcard for file.get.
+FILE_GET_WILDCARD = "easybus.*.file.get"
+
+
+def ch_file_ingest(tenant: str) -> str:
+    """Route a file-ingest request for one tenant."""
+    return f"{tenant_prefix(tenant)}file.ingest"
+
+
+def ch_file_get(tenant: str) -> str:
+    """Route a file-get request for one tenant."""
+    return f"{tenant_prefix(tenant)}file.get"
+
+
 # ---- arg readers -----------------------------------------------------------
 
 
