@@ -11,6 +11,13 @@ import yaml
 
 from easybus.extension import Config, ConfigSpec, ToolSpec, VariableSpec
 
+#: Config knob kinds (kind is an open string; these are the special values).
+CONFIG_KIND_VALUE = "value"
+CONFIG_KIND_MODEL = "model"
+#: A secret's value is never returned to a client (the agent withholds it and
+#: reports only whether it is set).
+CONFIG_KIND_SECRET = "secret"
+
 
 @dataclass
 class ManifestTool:
@@ -58,6 +65,18 @@ def parse_manifest(data: str | bytes) -> Manifest:
     doc = yaml.safe_load(data) or {}
     if not doc.get("id"):
         raise ValueError("manifest: id is required")
+    for c in doc.get("config", []):
+        if c.get("kind") != CONFIG_KIND_SECRET:
+            continue
+        # A secret knob is a credential: its value is never returned to a
+        # client, and a `default` would ride the (broadcast) manifest — so a
+        # secret MUST be a string and MUST NOT declare a default.
+        t = c.get("type", "")
+        if t and t != "string":
+            raise ValueError(f'manifest: config "{c.get("name")}": kind=secret requires type=string (got "{t}")')
+        d = c.get("default")
+        if d is not None and d != "":
+            raise ValueError(f'manifest: config "{c.get("name")}": kind=secret must not declare a default')
     return Manifest(
         id=doc["id"],
         version=doc.get("version", ""),
