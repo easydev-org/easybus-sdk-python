@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The SDK declares no floor, so CI is where a floor actually gets
+        # discovered: the oldest version here is the oldest one that works.
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+
+      # test_proto_sync asserts the COMMITTED generated bindings still match the
+      # .proto. Python is the only language here that checks in its generated
+      # code, so it is the only one that can silently drift — this test is what
+      # caught it last time.
+      - name: unit + proto-sync
+        run: python -m pytest tests/ -q -m "not integration"
+
+      - name: start nats
+        run: |
+          curl -fsSL -o /tmp/nats.tar.gz \
+            https://github.com/nats-io/nats-server/releases/download/v2.10.22/nats-server-v2.10.22-linux-amd64.tar.gz
+          tar -xzf /tmp/nats.tar.gz -C /tmp
+          /tmp/nats-server-v2.10.22-linux-amd64/nats-server -js -p 4222 &
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/4222) 2>/dev/null; then echo "nats up"; exit 0; fi
+            sleep 1
+          done
+          echo "nats did not start"; exit 1
+
+      - name: integration against a real broker
+        env:
+          EASYBUS_NATS_URL: nats://127.0.0.1:4222
+        run: python -m pytest tests/ -q
