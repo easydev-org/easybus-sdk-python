@@ -35,9 +35,11 @@ from easybus.protocol import (
     var_key,
 )
 from easybus.wire import (
+    ConfigFieldSchema,
     ErrorPayload,
     ExtensionConfigItem,
     ExtensionManifest,
+    ExtensionNamespace,
     ExtensionTool,
     ExtensionVariable,
     HookResponse,
@@ -47,7 +49,6 @@ from easybus.wire import (
     from_value,
     to_value,
 )
-
 MAX_TOOL_CONTENT_BYTES = 128 * 1024
 PRESENCE_BUCKET = "easybus-presence"
 PRESENCE_TTL = 15_000
@@ -84,6 +85,8 @@ class ToolSpec:
     descriptions: dict[str, str] = field(default_factory=dict)
     input_schema: dict[str, Any] = field(default_factory=dict)
     required_config: list[str] = field(default_factory=list)
+    #: Grouping of this tool (pvc, build, storage, ...). Organisational only.
+    namespace: str = ""
 
 
 @dataclass
@@ -92,6 +95,61 @@ class VariableSpec:
     description: str = ""
     descriptions: dict[str, str] = field(default_factory=dict)
     scope: str = "global"
+
+
+@dataclass
+class FieldSpec:
+    """One key of a structured config value (or of one list item's keys).
+
+    It exists so a client can render a real form instead of a JSON textarea: an
+    ``enum`` becomes a picker, ``kind="secret"`` a masked input, ``format="uri"``
+    a URL field, and a list of objects becomes repeatable cards with a "+".
+    """
+
+    name: str
+    type: str = "string"
+    kind: str = ""
+    format: str = ""
+    enum_values: list[str] = field(default_factory=list)
+    default: Any = None
+    required: bool = False
+    description: str = ""
+    descriptions: dict[str, str] = field(default_factory=dict)
+    fields: list["FieldSpec"] = field(default_factory=list)
+
+
+@dataclass
+class NamespaceSpec:
+    """One declared grouping of an extension's tools and config."""
+
+    name: str
+    description: str = ""
+    descriptions: dict[str, str] = field(default_factory=dict)
+
+
+def _to_field_schema(f: FieldSpec) -> ConfigFieldSchema:
+    """Map a declared field onto the wire schema (recursing one level).
+
+    Nested ``fields`` are supported because a field may itself be an object; both
+    the client renderer and the validator stop at that depth on purpose.
+    """
+    out = ConfigFieldSchema(
+        name=f.name,
+        type=f.type,
+        required=f.required,
+        enum_values=f.enum_values,
+    )
+    if f.kind:
+        out.kind = f.kind
+    if f.format:
+        out.format = f.format
+    if f.default is not None:
+        out.default.CopyFrom(to_value(f.default))
+    if f.description:
+        out.description = f.description
+    out.descriptions.update(f.descriptions)
+    out.fields.extend(_to_field_schema(sub) for sub in f.fields)
+    return out
 
 
 @dataclass
@@ -104,6 +162,16 @@ class ConfigSpec:
     description: str = ""
     descriptions: dict[str, str] = field(default_factory=dict)
     scope: str = "global"
+    #: Shape of a structured knob (type list/object): the keys of the object, or
+    #: of each list item. Empty = untyped json blob (the fallback).
+    fields: list[FieldSpec] = field(default_factory=list)
+    #: Element type when type == "list".
+    item_type: str = ""
+    min_items: int = 0
+    max_items: int = 0
+    #: Scopes this knob's stored value to one namespace of the extension.
+    #: Empty = extension-level (shared by all its namespaces).
+    namespace: str = ""
 
 
 @dataclass
@@ -114,6 +182,8 @@ class Config:
     tools: dict[str, ToolSpec] = field(default_factory=dict)
     variables: dict[str, VariableSpec] = field(default_factory=dict)
     config: dict[str, ConfigSpec] = field(default_factory=dict)
+    #: Declared groupings (pvc, build, storage, ...), in the author's order.
+    namespaces: list[NamespaceSpec] = field(default_factory=list)
     call_hooks: list[str] = field(default_factory=list)
     event_hooks: list[str] = field(default_factory=list)
     lifecycle: list[str] = field(default_factory=list)
@@ -240,14 +310,17 @@ class Extension:
         m = ExtensionManifest(id=self._cfg.id, version=self._cfg.version, features=EASYBUS_FEATURES)
         caps: list[str] = []
         for name, spec in self._cfg.tools.items():
-            m.tools.append(
-                ExtensionTool(
-                    name=name,
-                    description=spec.description,
-                    descriptions=spec.descriptions,
-                    required_config=spec.required_config,
-                )
+            tool = ExtensionTool(
+                name=name,
+                description=spec.description,
+                descriptions=spec.descriptions,
+                required_config=spec.required_config,
             )
+            # Without this the manifest carries per-tool namespace tags that
+            # reference groups the client never receives.
+            if spec.namespace:
+                tool.namespace = spec.namespace
+            m.tools.append(tool)
         if self._cfg.tools:
             caps.append("tools")
         for name, spec in self._cfg.variables.items():
@@ -264,7 +337,23 @@ class Extension:
             item.enum_values.extend(spec.enum_values)
             if spec.default is not None:
                 item.default.CopyFrom(to_value(spec.default))
+            # The SHAPE of a structured knob: without it a client can only render
+            # one JSON textarea, and the stored key loses its namespace.
+            item.fields.extend(_to_field_schema(f) for f in spec.fields)
+            if spec.item_type:
+                item.item_type = spec.item_type
+            if spec.min_items:
+                item.min_items = spec.min_items
+            if spec.max_items:
+                item.max_items = spec.max_items
+            if spec.namespace:
+                item.namespace = spec.namespace
             m.config.append(item)
+        for ns in self._cfg.namespaces:
+            entry = ExtensionNamespace(name=ns.name, descriptions=ns.descriptions)
+            if ns.description:
+                entry.description = ns.description
+            m.namespaces.append(entry)
         m.lifecycle.extend(self._cfg.lifecycle)
         m.capabilities.extend(caps)
         if self._cfg.call_hooks or self._cfg.event_hooks:

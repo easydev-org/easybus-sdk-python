@@ -20,7 +20,7 @@ config:
 
 
 def test_rejects_non_string_secret():
-    with pytest.raises(ValueError, match="type=string"):
+    with pytest.raises(ValueError, match="requires type"):
         parse_manifest(
             """
 id: x
@@ -31,6 +31,33 @@ config:
     kind: secret
 """
         )
+
+
+def test_accepts_structured_secret():
+    """A list/object secret is allowed: each record carries its own secret field.
+
+    This is how a sandbox list declares a token PER sandbox. Rejecting it made the
+    typed form impossible for exactly the knob that needs it most, so the rule was
+    relaxed to "string, list or object" — the no-default rule still holds, because
+    a default would ride the broadcast manifest.
+    """
+    m = parse_manifest(
+        """
+id: x
+version: "1"
+config:
+  - name: sandboxes
+    type: list
+    kind: secret
+    item_type: object
+    fields:
+      - name: token
+        type: string
+        kind: secret
+"""
+    )
+    assert m.config[0].kind == CONFIG_KIND_SECRET
+    assert m.config[0].type == "list"
 
 
 def test_rejects_secret_with_default():
