@@ -42,6 +42,15 @@ COPY conformance-cases ./conformance-cases
 RUN useradd -m -u 10001 runner && chown -R runner /src
 USER runner
 
+# ONLY the shared cases and the module-level fixtures they need.
+#
+# The full `tests/` suite includes cases that assume they own the broker (event hooks,
+# presence timeouts) and cases that inspect the checkout (`test_proto_sync` reads
+# `proto/`). Neither belongs in an image whose purpose is "do four implementations
+# agree about config" — and running them here would fail for reasons that say nothing
+# about this SDK. They run in the `test` job, which has its own broker and the full
+# source tree.
+#
 # `-p no:cacheprovider` keeps the run reproducible: no .pytest_cache to leak between
 # invocations of a reused container.
-ENTRYPOINT ["python", "-m", "pytest", "tests/", "-v", "-p", "no:cacheprovider"]
+ENTRYPOINT ["python", "-m", "pytest", "tests/test_shared_cases.py", "-v", "-p", "no:cacheprovider"]

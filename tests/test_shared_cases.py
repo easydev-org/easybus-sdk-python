@@ -55,7 +55,10 @@ def test_shared_case(path, nats_server):
     if kind == "constant":
         _run_constant(case)
     elif kind == "kv":
-        _run_kv(case, nats_server)
+        # Prefer the broker the environment provides (docker-compose.yml), falling back
+        # to the fixture's private one. Using the shared broker is the POINT of the
+        # container: it is the pinned version every other SDK tests against.
+        _run_kv(case, os.environ.get("EASYBUS_NATS_URL") or nats_server)
     else:
         pytest.fail(f"unknown case kind {kind!r}")
 
