@@ -47,6 +47,7 @@ def test_shared_cases_exist():
     assert _cases(), "no shared cases found"
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("path", _cases(), ids=lambda p: p.stem)
 def test_shared_case(path, nats_server):
     case = json.loads(path.read_text())
@@ -59,8 +60,9 @@ def test_shared_case(path, nats_server):
         pytest.fail(f"unknown case kind {kind!r}")
 
 
+@pytest.mark.integration
 def test_nats_binary_is_available():
-    """The suite must not pass by skipping.
+    """The shared config cases must not pass by skipping.
 
     The `nats_server` fixture SKIPS when no broker binary is present, which turns a
     missing dependency into a green run — and the KV recovery path it guards (the only
@@ -68,7 +70,9 @@ def test_nats_binary_is_available():
     in this SDK was found) is exactly what would go untested.
 
     This asserts the BINARY exists without using the fixture, so it fails instead of
-    skipping. The other three SDKs fail in this situation; this makes Python agree.
+    skipping. It is marked `integration` so the unit-test job — which deliberately has
+    no broker — excludes it; the broker-dependent job (and the compose image) include
+    it, and there the absence of a broker is a real failure rather than a green skip.
     """
     import shutil
 
