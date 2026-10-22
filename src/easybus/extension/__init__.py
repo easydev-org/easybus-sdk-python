@@ -740,11 +740,7 @@ class Extension:
         parts = rest.split(".")
         value: Any = None
         if not ev.deleted:
-            try:
-                parsed = json.loads(ev.value)
-                value = parsed.get("v") if isinstance(parsed, dict) and "v" in parsed else parsed
-            except Exception:
-                return
+            value = _decode_config_value(ev.value)
             if value is None:
                 return
         from easybus.protocol import unescape_kv_segment
@@ -754,6 +750,38 @@ class Extension:
         elif len(parts) >= 2:
             # The session segment is KV-escaped in the key; unescape it.
             self.config_store.set_session(tenant, unescape_kv_segment(parts[0]), ".".join(parts[1:]), value, ev.deleted)
+
+
+def _decode_config_value(raw: str) -> Any:
+    """Decode one cfg-KV value.
+
+    A knob's value is ultimately a STRING. The JSON shapes we accept are:
+
+      * ``{"r": <rev>, "v": <value>}`` — the envelope older agents wrote;
+      * a JSON SCALAR (``"quoted"``, ``42``, ``true``);
+      * anything else VERBATIM — a bare URL, a token, a plain word.
+
+    The bare case used to be rejected: ``json.loads("http://host:80")`` raises, and
+    the old code returned, discarding the entry one key at a time. The extension
+    then reported every knob unset while the agent and the console both insisted
+    the value was saved — most visibly after a restart, when no in-memory copy
+    remained.
+
+    A JSON ARRAY or OBJECT is returned as its ORIGINAL TEXT, not parsed. Structured
+    knobs (a list of sandboxes, a servers map) carry a declaration that the
+    extension parses itself; handing back a list/dict makes a string-typed reader
+    see nothing.
+    """
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return raw
+
+    if isinstance(parsed, dict) and "v" in parsed:
+        return parsed["v"]
+    if isinstance(parsed, (list, dict)):
+        return raw
+    return parsed
 
 
 class _Stopper:

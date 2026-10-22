@@ -361,6 +361,100 @@ async def test_config_recovers_from_kv(nats_server):
 
 
 @pytest.mark.asyncio
+async def test_config_kv_bare_value(nats_server):
+    """A bare value must be stored, not discarded.
+
+    A knob's value is ultimately a STRING, and the agent writes it verbatim. A URL
+    is not JSON, so `json.loads` raises — and the old code returned, dropping the
+    entry one key at a time. The extension then reported every knob unset while the
+    agent and the console both insisted the value was saved.
+
+    This is the RESTART path: the snapshot in the KV bucket is the only way a
+    restarted extension learns its configuration.
+    """
+    a = await connect(nats_server); e = await connect(nats_server)
+    try:
+        await a.kv_put(CONFIG_KV_BUCKET, f"t.{T}.conf-ext.endpoint", "http://easyops.example:80", 0)
+        ext = Extension(e, Config(id="conf-ext", version="1",
+                                  config={"endpoint": ConfigSpec(type="string", default="")}))
+        await ext.serve()
+        try:
+            for _ in range(50):
+                if ext.get_config(T, "endpoint", "") == "http://easyops.example:80":
+                    break
+                await asyncio.sleep(0.05)
+            assert ext.get_config(T, "endpoint", "") == "http://easyops.example:80"
+        finally:
+            await ext.close()
+    finally:
+        await a.close()
+
+
+@pytest.mark.asyncio
+async def test_config_kv_structured_value_stays_text(nats_server):
+    """A structured knob arrives as its ORIGINAL TEXT.
+
+    A list/object knob carries a declaration the extension parses itself. Handing
+    back a parsed list makes a string-typed reader see nothing — it would report the
+    knob unset even though the value was delivered. Every sandbox/computer tool
+    requires a structured `sandboxes` knob, so this is the common case, not an edge.
+    """
+    a = await connect(nats_server); e = await connect(nats_server)
+    raw = '[{"name":"local","url":"http://worker:80"}]'
+    try:
+        await a.kv_put(CONFIG_KV_BUCKET, f"t.{T}.conf-ext.servers", raw, 0)
+        ext = Extension(e, Config(id="conf-ext", version="1",
+                                  config={"servers": ConfigSpec(type="list", default=[])}))
+        await ext.serve()
+        try:
+            for _ in range(50):
+                if ext.get_config(T, "servers", "") == raw:
+                    break
+                await asyncio.sleep(0.05)
+            got = ext.get_config(T, "servers", "")
+            assert got == raw, f"structured value must stay text, got {got!r}"
+        finally:
+            await ext.close()
+    finally:
+        await a.close()
+
+
+@pytest.mark.asyncio
+async def test_config_kv_envelope_still_unwraps(nats_server):
+    """The legacy `{"r":<rev>,"v":<value>}` envelope keeps working.
+
+    Guards the other direction: accepting bare values must not break agents that
+    still write the envelope.
+    """
+    a = await connect(nats_server); e = await connect(nats_server)
+    try:
+        await a.kv_put(CONFIG_KV_BUCKET, f"t.{T}.conf-ext.poll-interval", '{"r":9,"v":77}', 0)
+        ext = Extension(e, Config(id="conf-ext", version="1",
+                                  config={"poll-interval": ConfigSpec(type="number", default=30)}))
+        await ext.serve()
+        try:
+            for _ in range(50):
+                if ext.get_config(T, "poll-interval", "") == 77:
+                    break
+                await asyncio.sleep(0.05)
+            assert ext.get_config(T, "poll-interval", "") == 77
+        finally:
+            await ext.close()
+    finally:
+        await a.close()
+
+
+def test_config_kv_bucket_name():
+    """The bucket name is a CONTRACT between the agent and every extension.
+
+    Extensions subscribe to `t.*.<extId>.>` in this bucket. An agent writing to a
+    differently-named bucket would store every value where nothing was looking, and
+    each side would look perfectly healthy on its own.
+    """
+    assert CONFIG_KV_BUCKET == "cfg"
+
+
+@pytest.mark.asyncio
 async def test_presence_liveness(nats_server):
     a = await connect(nats_server); e = await connect(nats_server)
     agent = Agent(a)
