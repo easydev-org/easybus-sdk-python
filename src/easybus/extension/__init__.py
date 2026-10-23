@@ -28,6 +28,7 @@ from easybus.protocol import (
     ch_mailbox,
     ch_session_events,
     ch_tool_progress,
+    ch_channel,
     new_id,
     session_var_key,
     subject_tenant,
@@ -58,6 +59,19 @@ _CODE_INVALID_ARGUMENT = 1
 _CODE_NOT_FOUND = 2
 _CODE_RETRYABLE = 4
 _CODE_INTERNAL = 6
+_CODE_PERMISSION_DENIED = 3
+
+# Permission enforcement is a separate module so the matching rules live in one place, mirroring
+# the Go and TypeScript SDKs. Re-exported from here; an extension imports from the package.
+from .permission import (  # noqa: E402
+    GrantParams,
+    PermissionDenied,
+    allowed,
+    grants_for,
+    grants_scope,
+    matches,
+    require,
+)
 
 EASYBUS_FEATURES = ["dlq", "config-kv", "presence", "kv-escaping", "interrupt-abort", "progress", "multitenant"]
 
@@ -87,6 +101,13 @@ class ToolSpec:
     required_config: list[str] = field(default_factory=list)
     #: Grouping of this tool (pvc, build, storage, ...). Organisational only.
     namespace: str = ""
+    #: Permission keys a caller must hold to invoke this tool.
+    #:
+    #: Checked twice, on purpose. The dispatcher does a COARSE check — is the key present at
+    #: all — because it cannot know what the params mean. The tool then calls
+    #: `permission.require` with the target it resolved from its own arguments, and that second
+    #: check is the real boundary.
+    requires: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -418,6 +439,23 @@ class Extension:
     async def report_progress(self, tenant: str, call_id: str, progress: dict) -> None:
         await self._b.publish(ch_tool_progress(tenant, call_id), {"call_id": call_id, **progress}, PublishOpts(tenant=tenant))
 
+    async def publish_channel(self, tenant: str, channel: str, topic: str, payload) -> None:
+        """Publishes an event to a channel.
+
+        The tenant is the one this extension is running for — never a caller-supplied value — so
+        an extension cannot publish into another tenant's channels. ``channel`` and ``topic`` are
+        validated as literal subject segments: a wildcard would turn one publish into a
+        broadcast.
+
+        Choose a topic a user can subscribe to meaningfully. ``tag.agentdev/mrflow.v1.2.3`` lets
+        a session follow one repository's tags; a flat ``event`` pushes the filtering into every
+        subscriber's code.
+        """
+        subject = ch_channel(tenant, channel, topic)
+        # The wire shape the bus consumer expects: the payload beside an advisory source. The
+        # authoritative channel and tenant come from the SUBJECT, never from here.
+        await self._b.publish(subject, {"payload": payload, "source": self._cfg.id}, PublishOpts(tenant=tenant))
+
     async def _serve_discovery(self) -> None:
         sub = await self._b.subscribe(CH_DISCOVER, SubscribeOpts(queue=self._cfg.id))
         self._subs.append(sub)
@@ -461,6 +499,28 @@ class Extension:
         if session_name:
             self.track_inflight(tenant, session_name, call_id, cancel)
         res = ToolResult(call_id=call_id, tool=name)
+
+        # The caller's grants, bound for the duration of this call so a tool can check coverage
+        # itself. A tool that declares no `requires` never looks.
+        scope = grants_scope(call.get("grants") or [])
+        scope.__enter__()
+        try:
+            # COARSE check: is the key present at all?
+            #
+            # Deliberately not "does a grant cover this call": that needs the target, which only
+            # the tool can resolve from its arguments. This refuses early, with a clear message,
+            # when the session holds no such permission whatsoever.
+            for key in getattr(spec, "requires", []) or []:
+                if not grants_for(key):
+                    self.untrack_inflight(tenant, session_name, call_id)
+                    res.error.CopyFrom(ToolError(code=_CODE_PERMISSION_DENIED, message=str(PermissionDenied(key, {}, []))))
+                    await self._b.publish(reply_to, res, PublishOpts(tenant=tenant))
+                    return
+            await self._dispatch_tool(name, spec, res, call, call_id, session_name, tenant, cancel, reply_to)
+        finally:
+            scope.__exit__(None, None, None)
+
+    async def _dispatch_tool(self, name: str, spec: ToolSpec, res, call: dict, call_id: str, session_name: str, tenant: str, cancel: asyncio.Event, reply_to: str) -> None:
         try:
             data = await _invoke_execute(spec.execute, call.get("arguments", {}) or {}, call_id, session_name, tenant, cancel)
             if data.content and len(data.content.encode("utf-8")) > MAX_TOOL_CONTENT_BYTES:

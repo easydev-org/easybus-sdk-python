@@ -68,6 +68,26 @@ def test_shared_constant_case(path):
     _run_constant(json.loads(path.read_text()))
 
 
+@pytest.mark.parametrize("path", _cases_of_kind("permission-matching"))
+def test_shared_permission_matching_case(path):
+    """The grant-matching rules, from the shared table.
+
+    Pure computation, so no broker: this runs in the unit job, which means a rule that drifts in
+    this SDK fails immediately rather than at the next integration run.
+
+    These rules are the security boundary of every extension, implemented once per language. Two
+    SDKs that disagree do not fail loudly — they authorise different things for the same grant,
+    depending on which language the extension happens to be written in.
+    """
+    from easybus.extension import matches
+
+    case = json.loads(path.read_text())
+    cases = case.get("cases") or []
+    assert cases, f"{case['id']}: no cases"
+    for i, mc in enumerate(cases):
+        assert matches(mc["grant"], mc["target"]) is mc["want"], f"{case['id']} case {i}: {mc['why']}"
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize("path", _cases_of_kind("kv"))
 def test_shared_kv_case(path, nats_server):

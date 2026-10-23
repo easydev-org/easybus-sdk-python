@@ -235,3 +235,14 @@ def unescape_kv_segment(s: str) -> str:
         out.append(s[i])
         i += 1
     return "".join(out)
+
+
+# Channel subjects live in their own module (they are a distinct concept from the mailbox) but are
+# re-exported here so callers keep importing from one place.
+from .channel import (  # noqa: E402
+    CHANNEL_KV_BUCKET,
+    CH_CHANNEL_ALL,
+    ch_channel,
+    match_subject,
+    parse_channel_subject,
+)
