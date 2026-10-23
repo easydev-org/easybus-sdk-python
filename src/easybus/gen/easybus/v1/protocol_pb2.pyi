@@ -3,8 +3,7 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -237,7 +236,7 @@ class ConfigFieldSchema(_message.Message):
     description: str
     descriptions: _containers.ScalarMap[str, str]
     fields: _containers.RepeatedCompositeFieldContainer[ConfigFieldSchema]
-    def __init__(self, name: _Optional[str] = ..., type: _Optional[str] = ..., kind: _Optional[str] = ..., format: _Optional[str] = ..., enum_values: _Optional[_Iterable[str]] = ..., default: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., required: _Optional[bool] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., fields: _Optional[_Iterable[_Union[ConfigFieldSchema, _Mapping]]] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., type: _Optional[str] = ..., kind: _Optional[str] = ..., format: _Optional[str] = ..., enum_values: _Optional[_Iterable[str]] = ..., default: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., required: bool = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., fields: _Optional[_Iterable[_Union[ConfigFieldSchema, _Mapping]]] = ...) -> None: ...
 
 class ConfigSet(_message.Message):
     __slots__ = ("name", "scope", "revision", "value", "session_name", "tenant", "ack")
@@ -255,7 +254,7 @@ class ConfigSet(_message.Message):
     session_name: str
     tenant: str
     ack: bool
-    def __init__(self, name: _Optional[str] = ..., scope: _Optional[str] = ..., revision: _Optional[int] = ..., value: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., session_name: _Optional[str] = ..., tenant: _Optional[str] = ..., ack: _Optional[bool] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., scope: _Optional[str] = ..., revision: _Optional[int] = ..., value: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., session_name: _Optional[str] = ..., tenant: _Optional[str] = ..., ack: bool = ...) -> None: ...
 
 class ConfigSnapshot(_message.Message):
     __slots__ = ("sessions",)
@@ -299,7 +298,7 @@ class HookResponse(_message.Message):
     ok: bool
     data: _struct_pb2.Value
     error: ToolError
-    def __init__(self, ok: _Optional[bool] = ..., data: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., error: _Optional[_Union[ToolError, _Mapping]] = ...) -> None: ...
+    def __init__(self, ok: bool = ..., data: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., error: _Optional[_Union[ToolError, _Mapping]] = ...) -> None: ...
 
 class LifecycleEvent(_message.Message):
     __slots__ = ("kind", "session_name", "to", "parent", "id", "payload")
@@ -351,7 +350,7 @@ class InterruptSignal(_message.Message):
     def __init__(self, session_name: _Optional[str] = ..., reason: _Optional[str] = ...) -> None: ...
 
 class ExtensionTool(_message.Message):
-    __slots__ = ("name", "description", "descriptions", "input_schema", "required_config", "namespace", "requires")
+    __slots__ = ("name", "description", "descriptions", "input_schema", "required_config", "bot_probe", "namespace", "requires")
     class DescriptionsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -364,6 +363,7 @@ class ExtensionTool(_message.Message):
     DESCRIPTIONS_FIELD_NUMBER: _ClassVar[int]
     INPUT_SCHEMA_FIELD_NUMBER: _ClassVar[int]
     REQUIRED_CONFIG_FIELD_NUMBER: _ClassVar[int]
+    BOT_PROBE_FIELD_NUMBER: _ClassVar[int]
     NAMESPACE_FIELD_NUMBER: _ClassVar[int]
     REQUIRES_FIELD_NUMBER: _ClassVar[int]
     name: str
@@ -371,9 +371,10 @@ class ExtensionTool(_message.Message):
     descriptions: _containers.ScalarMap[str, str]
     input_schema: _struct_pb2.Struct
     required_config: _containers.RepeatedScalarFieldContainer[str]
+    bot_probe: str
     namespace: str
     requires: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., input_schema: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., required_config: _Optional[_Iterable[str]] = ..., namespace: _Optional[str] = ..., requires: _Optional[_Iterable[str]] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., input_schema: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., required_config: _Optional[_Iterable[str]] = ..., bot_probe: _Optional[str] = ..., namespace: _Optional[str] = ..., requires: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class PermissionDecl(_message.Message):
     __slots__ = ("key", "label", "descriptions", "risk", "params_fields")
