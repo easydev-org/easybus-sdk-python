@@ -36,6 +36,52 @@ class ManifestTool:
     #: Grouping of this tool (pvc, build, storage, ...). Organisational only: the
     #: tool keeps its name; it lets a client group the list.
     namespace: str = ""
+    #: Permission keys a caller must hold to invoke this tool.
+    #:
+    #: The manifest is the single source: the dispatcher reads this to refuse a call the session
+    #: holds no grant for, and a client reads it to know what to ask the user for.
+    requires: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ManifestPermission:
+    """One permission an extension can require.
+
+    A permission is a (key, params) pair, NOT a bare name: "merge in agentdev/mrflow" is a
+    different authorisation from "merge in other/repo", so a session may hold several grants of
+    the same key with different params.
+    """
+
+    key: str
+    label: str = ""
+    descriptions: dict[str, str] = field(default_factory=dict)
+    #: read | write | destructive. Presentation only — it does not affect enforcement.
+    risk: str = ""
+    #: The params a grant carries, using the same field schema as a structured config knob.
+    #: Declared after ManifestField so the reference resolves; the annotations future import
+    #: already makes this a string, so ordering is only a readability choice.
+    params: list["ManifestField"] = field(default_factory=list)
+
+
+@dataclass
+class ManifestChannelTopic:
+    pattern: str = ""
+    description: str = ""
+    descriptions: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ManifestChannel:
+    """One channel an extension publishes to.
+
+    A channel is a pub/sub topic, not a command queue: knowing the topic FORMAT is what lets a
+    user write a subscription pattern ("tag.agentdev/mrflow.>") instead of following everything.
+    """
+
+    name: str
+    description: str = ""
+    descriptions: dict[str, str] = field(default_factory=dict)
+    topics: list[ManifestChannelTopic] = field(default_factory=list)
 
 
 @dataclass
@@ -106,6 +152,14 @@ class Manifest:
     hooks: dict[str, Any] = field(default_factory=dict)
     #: Declared groupings (pvc, build, storage, ...), in the author's ORDER.
     namespaces: list[ManifestNamespace] = field(default_factory=list)
+    #: Permissions this extension can require.
+    #:
+    #: Missing this field is how a manifest could declare `permissions:` and have them silently
+    #: dropped — the YAML parsed, `_known` discarded the key because no dataclass field matched,
+    #: and every tool ran ungated while the file said otherwise.
+    permissions: list[ManifestPermission] = field(default_factory=list)
+    #: Channels this extension publishes to, so a user can discover the topic format.
+    channels: list[ManifestChannel] = field(default_factory=list)
 
 
 def parse_manifest(data: str | bytes) -> Manifest:
@@ -142,6 +196,8 @@ def parse_manifest(data: str | bytes) -> Manifest:
         lifecycle=doc.get("lifecycle", []),
         hooks=doc.get("hooks", {}) or {},
         namespaces=[_build_namespace(n) for n in doc.get("namespaces", [])],
+        permissions=[_build_permission(p) for p in doc.get("permissions", []) or []],
+        channels=[_build_channel(c) for c in doc.get("channels", []) or []],
     )
 
 
@@ -164,6 +220,20 @@ def _build_field(raw: dict[str, Any]) -> ManifestField:
 
 def _build_tool(raw: dict[str, Any]) -> ManifestTool:
     return ManifestTool(**_known(ManifestTool, raw))
+
+
+def _build_permission(raw: dict[str, Any]) -> ManifestPermission:
+    data = _known(ManifestPermission, raw)
+    data["params"] = [_build_field(f) for f in raw.get("params", []) or []]
+    return ManifestPermission(**data)
+
+
+def _build_channel(raw: dict[str, Any]) -> ManifestChannel:
+    data = _known(ManifestChannel, raw)
+    data["topics"] = [
+        ManifestChannelTopic(**_known(ManifestChannelTopic, t)) for t in raw.get("topics", []) or []
+    ]
+    return ManifestChannel(**data)
 
 
 def _build_config(raw: dict[str, Any]) -> ManifestConfig:
