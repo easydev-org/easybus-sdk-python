@@ -33,10 +33,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      # Pinned: a floating grpcio-tools changes the generated output across releases
-      # (comment style, imports), which would show up as a large diff unrelated to the
-      # contract and make the real change hard to spot.
-      - run: pip install grpcio-tools==1.66.1
+      # buf, like the Go and TypeScript SDKs. The Python plugin runs on the Buf Schema
+      # Registry, so there is no grpcio-tools to install — one fewer build dependency, and
+      # the generator version is pinned in proto/buf.gen.yaml next to the other SDKs' pins
+      # rather than in a pip line here.
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Regenerate
         run: make gen

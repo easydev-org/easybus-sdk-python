@@ -1,4 +1,21 @@
+# Python code generation through buf, the same driver the Go and TypeScript SDKs use.
+#
+# WHY BUF HERE AT ALL. Every other SDK generates through buf; this one used grpc_tools
+# directly, so "regenerate the Python bindings" was a different command from every other
+# language — which is exactly the kind of difference that makes one of them get forgotten.
+# One driver means one instruction, one plugin-pinning story, and a codegen workflow that
+# looks like its siblings.
+#
+# The plugin runs REMOTELY on the Buf Schema Registry rather than requiring a local
+# protoc-gen-python: protoc's Python support is built in, not a separate binary, so there is
+# nothing to install locally — buf fetches a pinned, reproducible generator instead.
+#
+# Version pinned deliberately: an unpinned generator changes its output between releases
+# (import style, comment handling), which would show up as a large diff unrelated to any
+# contract change.
 version: v2
 plugins:
-  - local: protoc-gen-python
+  - remote: buf.build/protocolbuffers/python:v29.3
+    out: ../src/easybus/gen
+  - remote: buf.build/protocolbuffers/pyi:v29.3
     out: ../src/easybus/gen
