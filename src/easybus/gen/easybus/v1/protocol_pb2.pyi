@@ -3,8 +3,7 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -237,7 +236,7 @@ class ConfigFieldSchema(_message.Message):
     description: str
     descriptions: _containers.ScalarMap[str, str]
     fields: _containers.RepeatedCompositeFieldContainer[ConfigFieldSchema]
-    def __init__(self, name: _Optional[str] = ..., type: _Optional[str] = ..., kind: _Optional[str] = ..., format: _Optional[str] = ..., enum_values: _Optional[_Iterable[str]] = ..., default: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., required: _Optional[bool] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., fields: _Optional[_Iterable[_Union[ConfigFieldSchema, _Mapping]]] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., type: _Optional[str] = ..., kind: _Optional[str] = ..., format: _Optional[str] = ..., enum_values: _Optional[_Iterable[str]] = ..., default: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., required: bool = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., fields: _Optional[_Iterable[_Union[ConfigFieldSchema, _Mapping]]] = ...) -> None: ...
 
 class ConfigSet(_message.Message):
     __slots__ = ("name", "scope", "revision", "value", "session_name", "tenant", "ack")
@@ -255,7 +254,7 @@ class ConfigSet(_message.Message):
     session_name: str
     tenant: str
     ack: bool
-    def __init__(self, name: _Optional[str] = ..., scope: _Optional[str] = ..., revision: _Optional[int] = ..., value: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., session_name: _Optional[str] = ..., tenant: _Optional[str] = ..., ack: _Optional[bool] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., scope: _Optional[str] = ..., revision: _Optional[int] = ..., value: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., session_name: _Optional[str] = ..., tenant: _Optional[str] = ..., ack: bool = ...) -> None: ...
 
 class ConfigSnapshot(_message.Message):
     __slots__ = ("sessions",)
@@ -299,7 +298,7 @@ class HookResponse(_message.Message):
     ok: bool
     data: _struct_pb2.Value
     error: ToolError
-    def __init__(self, ok: _Optional[bool] = ..., data: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., error: _Optional[_Union[ToolError, _Mapping]] = ...) -> None: ...
+    def __init__(self, ok: bool = ..., data: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., error: _Optional[_Union[ToolError, _Mapping]] = ...) -> None: ...
 
 class LifecycleEvent(_message.Message):
     __slots__ = ("kind", "session_name", "to", "parent", "id", "payload")
