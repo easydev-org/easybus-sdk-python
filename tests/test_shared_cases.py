@@ -47,20 +47,34 @@ def test_shared_cases_exist():
     assert _cases(), "no shared cases found"
 
 
+def _cases_of_kind(kind: str):
+    """Cases of one kind, for parametrisation.
+
+    Split by KIND rather than filtered inside a single test: a `constant` case asserts
+    a protocol value and needs no broker, so it must run in the unit job — which has
+    none. Marking every case `integration` would have quietly dropped it from that job
+    for a reason that does not apply to it.
+    """
+    out = []
+    for p in _cases():
+        case = json.loads(p.read_text())
+        if case.get("kind") == kind:
+            out.append(pytest.param(p, id=p.stem))
+    return out
+
+
+@pytest.mark.parametrize("path", _cases_of_kind("constant"))
+def test_shared_constant_case(path):
+    _run_constant(json.loads(path.read_text()))
+
+
 @pytest.mark.integration
-@pytest.mark.parametrize("path", _cases(), ids=lambda p: p.stem)
-def test_shared_case(path, nats_server):
-    case = json.loads(path.read_text())
-    kind = case["kind"]
-    if kind == "constant":
-        _run_constant(case)
-    elif kind == "kv":
-        # Prefer the broker the environment provides (docker-compose.yml), falling back
-        # to the fixture's private one. Using the shared broker is the POINT of the
-        # container: it is the pinned version every other SDK tests against.
-        _run_kv(case, os.environ.get("EASYBUS_NATS_URL") or nats_server)
-    else:
-        pytest.fail(f"unknown case kind {kind!r}")
+@pytest.mark.parametrize("path", _cases_of_kind("kv"))
+def test_shared_kv_case(path, nats_server):
+    # Prefer the broker the environment provides (docker-compose.yml), falling back to
+    # the fixture's private one. Using the shared broker is the POINT of the container:
+    # it is the pinned version every other SDK tests against.
+    _run_kv(json.loads(path.read_text()), os.environ.get("EASYBUS_NATS_URL") or nats_server)
 
 
 @pytest.mark.integration

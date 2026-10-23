@@ -74,12 +74,14 @@ class ObjectRef(_message.Message):
     def __init__(self, id: _Optional[str] = ..., content_type: _Optional[str] = ...) -> None: ...
 
 class ToolCallEnvelope(_message.Message):
-    __slots__ = ("call_id", "arguments")
+    __slots__ = ("call_id", "arguments", "grants")
     CALL_ID_FIELD_NUMBER: _ClassVar[int]
     ARGUMENTS_FIELD_NUMBER: _ClassVar[int]
+    GRANTS_FIELD_NUMBER: _ClassVar[int]
     call_id: str
     arguments: _struct_pb2.Struct
-    def __init__(self, call_id: _Optional[str] = ..., arguments: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ...) -> None: ...
+    grants: _containers.RepeatedCompositeFieldContainer[Grant]
+    def __init__(self, call_id: _Optional[str] = ..., arguments: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., grants: _Optional[_Iterable[_Union[Grant, _Mapping]]] = ...) -> None: ...
 
 class ToolProgress(_message.Message):
     __slots__ = ("call_id", "progress", "phase", "text", "metadata")
@@ -149,7 +151,7 @@ class ExtensionVariableValue(_message.Message):
     def __init__(self, name: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
 
 class ExtensionConfigItem(_message.Message):
-    __slots__ = ("name", "type", "kind", "scope", "description", "descriptions", "enum_values", "default", "capability", "fields", "item_type", "min_items", "max_items", "namespace")
+    __slots__ = ("name", "type", "kind", "scope", "description", "descriptions", "enum_values", "default", "capability", "fields", "item_type", "min_items", "max_items", "namespace", "format")
     class DescriptionsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -171,6 +173,7 @@ class ExtensionConfigItem(_message.Message):
     MIN_ITEMS_FIELD_NUMBER: _ClassVar[int]
     MAX_ITEMS_FIELD_NUMBER: _ClassVar[int]
     NAMESPACE_FIELD_NUMBER: _ClassVar[int]
+    FORMAT_FIELD_NUMBER: _ClassVar[int]
     name: str
     type: str
     kind: str
@@ -185,7 +188,8 @@ class ExtensionConfigItem(_message.Message):
     min_items: int
     max_items: int
     namespace: str
-    def __init__(self, name: _Optional[str] = ..., type: _Optional[str] = ..., kind: _Optional[str] = ..., scope: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., enum_values: _Optional[_Iterable[str]] = ..., default: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., capability: _Optional[str] = ..., fields: _Optional[_Iterable[_Union[ConfigFieldSchema, _Mapping]]] = ..., item_type: _Optional[str] = ..., min_items: _Optional[int] = ..., max_items: _Optional[int] = ..., namespace: _Optional[str] = ...) -> None: ...
+    format: str
+    def __init__(self, name: _Optional[str] = ..., type: _Optional[str] = ..., kind: _Optional[str] = ..., scope: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., enum_values: _Optional[_Iterable[str]] = ..., default: _Optional[_Union[_struct_pb2.Value, _Mapping]] = ..., capability: _Optional[str] = ..., fields: _Optional[_Iterable[_Union[ConfigFieldSchema, _Mapping]]] = ..., item_type: _Optional[str] = ..., min_items: _Optional[int] = ..., max_items: _Optional[int] = ..., namespace: _Optional[str] = ..., format: _Optional[str] = ...) -> None: ...
 
 class ExtensionNamespace(_message.Message):
     __slots__ = ("name", "description", "descriptions")
@@ -347,7 +351,7 @@ class InterruptSignal(_message.Message):
     def __init__(self, session_name: _Optional[str] = ..., reason: _Optional[str] = ...) -> None: ...
 
 class ExtensionTool(_message.Message):
-    __slots__ = ("name", "description", "descriptions", "input_schema", "required_config", "namespace")
+    __slots__ = ("name", "description", "descriptions", "input_schema", "required_config", "namespace", "requires")
     class DescriptionsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -361,16 +365,47 @@ class ExtensionTool(_message.Message):
     INPUT_SCHEMA_FIELD_NUMBER: _ClassVar[int]
     REQUIRED_CONFIG_FIELD_NUMBER: _ClassVar[int]
     NAMESPACE_FIELD_NUMBER: _ClassVar[int]
+    REQUIRES_FIELD_NUMBER: _ClassVar[int]
     name: str
     description: str
     descriptions: _containers.ScalarMap[str, str]
     input_schema: _struct_pb2.Struct
     required_config: _containers.RepeatedScalarFieldContainer[str]
     namespace: str
-    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., input_schema: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., required_config: _Optional[_Iterable[str]] = ..., namespace: _Optional[str] = ...) -> None: ...
+    requires: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., input_schema: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., required_config: _Optional[_Iterable[str]] = ..., namespace: _Optional[str] = ..., requires: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class PermissionDecl(_message.Message):
+    __slots__ = ("key", "label", "descriptions", "risk", "params_fields")
+    class DescriptionsEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    LABEL_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTIONS_FIELD_NUMBER: _ClassVar[int]
+    RISK_FIELD_NUMBER: _ClassVar[int]
+    PARAMS_FIELDS_FIELD_NUMBER: _ClassVar[int]
+    key: str
+    label: str
+    descriptions: _containers.ScalarMap[str, str]
+    risk: str
+    params_fields: _containers.RepeatedCompositeFieldContainer[ConfigFieldSchema]
+    def __init__(self, key: _Optional[str] = ..., label: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., risk: _Optional[str] = ..., params_fields: _Optional[_Iterable[_Union[ConfigFieldSchema, _Mapping]]] = ...) -> None: ...
+
+class Grant(_message.Message):
+    __slots__ = ("key", "params")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    PARAMS_FIELD_NUMBER: _ClassVar[int]
+    key: str
+    params: _struct_pb2.Struct
+    def __init__(self, key: _Optional[str] = ..., params: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ...) -> None: ...
 
 class ExtensionManifest(_message.Message):
-    __slots__ = ("id", "version", "capabilities", "features", "config", "tools", "prompt_variables", "namespaces", "lifecycle", "hooks")
+    __slots__ = ("id", "version", "capabilities", "features", "config", "tools", "prompt_variables", "namespaces", "lifecycle", "hooks", "permissions", "channels")
     ID_FIELD_NUMBER: _ClassVar[int]
     VERSION_FIELD_NUMBER: _ClassVar[int]
     CAPABILITIES_FIELD_NUMBER: _ClassVar[int]
@@ -381,6 +416,8 @@ class ExtensionManifest(_message.Message):
     NAMESPACES_FIELD_NUMBER: _ClassVar[int]
     LIFECYCLE_FIELD_NUMBER: _ClassVar[int]
     HOOKS_FIELD_NUMBER: _ClassVar[int]
+    PERMISSIONS_FIELD_NUMBER: _ClassVar[int]
+    CHANNELS_FIELD_NUMBER: _ClassVar[int]
     id: str
     version: str
     capabilities: _containers.RepeatedScalarFieldContainer[str]
@@ -391,7 +428,45 @@ class ExtensionManifest(_message.Message):
     namespaces: _containers.RepeatedCompositeFieldContainer[ExtensionNamespace]
     lifecycle: _containers.RepeatedScalarFieldContainer[str]
     hooks: HookSpec
-    def __init__(self, id: _Optional[str] = ..., version: _Optional[str] = ..., capabilities: _Optional[_Iterable[str]] = ..., features: _Optional[_Iterable[str]] = ..., config: _Optional[_Iterable[_Union[ExtensionConfigItem, _Mapping]]] = ..., tools: _Optional[_Iterable[_Union[ExtensionTool, _Mapping]]] = ..., prompt_variables: _Optional[_Iterable[_Union[ExtensionVariable, _Mapping]]] = ..., namespaces: _Optional[_Iterable[_Union[ExtensionNamespace, _Mapping]]] = ..., lifecycle: _Optional[_Iterable[str]] = ..., hooks: _Optional[_Union[HookSpec, _Mapping]] = ...) -> None: ...
+    permissions: _containers.RepeatedCompositeFieldContainer[PermissionDecl]
+    channels: _containers.RepeatedCompositeFieldContainer[ExtensionChannel]
+    def __init__(self, id: _Optional[str] = ..., version: _Optional[str] = ..., capabilities: _Optional[_Iterable[str]] = ..., features: _Optional[_Iterable[str]] = ..., config: _Optional[_Iterable[_Union[ExtensionConfigItem, _Mapping]]] = ..., tools: _Optional[_Iterable[_Union[ExtensionTool, _Mapping]]] = ..., prompt_variables: _Optional[_Iterable[_Union[ExtensionVariable, _Mapping]]] = ..., namespaces: _Optional[_Iterable[_Union[ExtensionNamespace, _Mapping]]] = ..., lifecycle: _Optional[_Iterable[str]] = ..., hooks: _Optional[_Union[HookSpec, _Mapping]] = ..., permissions: _Optional[_Iterable[_Union[PermissionDecl, _Mapping]]] = ..., channels: _Optional[_Iterable[_Union[ExtensionChannel, _Mapping]]] = ...) -> None: ...
+
+class ExtensionChannel(_message.Message):
+    __slots__ = ("name", "description", "descriptions", "topics")
+    class DescriptionsEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTIONS_FIELD_NUMBER: _ClassVar[int]
+    TOPICS_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    description: str
+    descriptions: _containers.ScalarMap[str, str]
+    topics: _containers.RepeatedCompositeFieldContainer[ChannelTopic]
+    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ..., topics: _Optional[_Iterable[_Union[ChannelTopic, _Mapping]]] = ...) -> None: ...
+
+class ChannelTopic(_message.Message):
+    __slots__ = ("pattern", "description", "descriptions")
+    class DescriptionsEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    PATTERN_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTIONS_FIELD_NUMBER: _ClassVar[int]
+    pattern: str
+    description: str
+    descriptions: _containers.ScalarMap[str, str]
+    def __init__(self, pattern: _Optional[str] = ..., description: _Optional[str] = ..., descriptions: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class HookSpec(_message.Message):
     __slots__ = ("call", "event", "call_schemas", "event_schemas")

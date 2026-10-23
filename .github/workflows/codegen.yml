@@ -1,0 +1,80 @@
+name: codegen
+
+# Regenerates the committed `*_pb2.py` bindings when the contract changes, and opens a pull
+# request with the result.
+#
+# WHY A BOT. Python commits its generated bindings (unlike Rust, whose build.rs regenerates at
+# compile time), so nothing forces them to match the proto. `tests/test_proto_sync.py` catches
+# drift, but catching it only tells you the build is broken — somebody still has to regenerate.
+# This turns that into a pull request nobody has to remember to open.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'proto/easybus/v1/protocol.proto'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: codegen-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Pinned: a floating grpcio-tools changes the generated output across releases
+      # (comment style, imports), which would show up as a large diff unrelated to the
+      # contract and make the real change hard to spot.
+      - run: pip install grpcio-tools==1.66.1
+
+      - name: Regenerate
+        run: make gen
+
+      - name: Verify the bindings now satisfy the drift guard
+        run: |
+          pip install -e ".[dev]"
+          python -m pytest tests/test_proto_sync.py -q
+
+      - name: Show what changed
+        run: |
+          if git diff --quiet -- src/easybus/gen; then
+            echo "generated bindings already match the proto"
+          else
+            git --no-pager diff --stat -- src/easybus/gen
+          fi
+
+      - name: Open a pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: codegen/protocol
+          delete-branch: true
+          commit-message: |
+            codegen: regenerate protobuf bindings from protocol.proto
+
+            Produced by .github/workflows/codegen.yml — no hand edits.
+          title: 'codegen: regenerate from protocol.proto'
+          body: |
+            `protocol.proto` changed; this PR carries the regenerated `*_pb2.py` bindings.
+
+            ### What to review
+            The **proto diff in the commit that triggered this run** — that is the real change.
+
+            ### Why a stale binding is dangerous
+            It imports and passes every test. A field the binding does not know is simply absent
+            on the wire, so a capability can look present in a manifest and never reach the other
+            side. `tests/test_proto_sync.py` fails in that state, which is what this PR clears.
+          labels: |
+            codegen
+            automated
