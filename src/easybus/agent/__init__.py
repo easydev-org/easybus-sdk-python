@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from easybus.bus import (
     InboxConsumeOpts,
@@ -225,6 +225,57 @@ class Agent:
         if source:
             body["source"] = source
         await self._b.inbox_publish(ch_mailbox(tenant, session_name), body, InboxPublishOpts(id=id_, session_name=session_name, tenant=tenant))
+
+    async def consume_dlq(self, handler) -> Callable[[], None]:
+        """Subscribes to every dead-letter message and hands each to ``handler``.
+
+        Dead letters are messages a consumer gave up on after repeated failures. Without this they
+        accumulate in the DLQ stream and nobody finds out — the failure is real but silent, which
+        is the worst combination.
+
+        ``handler`` returns True to ack the message, False to leave it in the DLQ (nacked, retried
+        later). A message that cannot be resolved to a tenant or session is TERMINATED rather than
+        dead-lettered again: dead letters of dead letters help nobody.
+
+        Returns a stop function.
+        """
+        sub = await self._b.inbox_consume(InboxConsumeOpts(subject="easybus.*.dlq.>"))
+        stopped = False
+        task = asyncio.create_task(self._dlq_loop(sub, handler, lambda: stopped))
+
+        def stop() -> None:
+            nonlocal stopped
+            stopped = True
+            task.cancel()
+
+        return stop
+
+    async def _dlq_loop(self, sub, handler, is_stopped) -> None:
+        while not is_stopped():
+            msg = await sub.next()
+            if msg is None:
+                return
+            env = msg.envelope
+            session_name = env.session_name or ""
+            tenant = env.tenant or subject_tenant(env.ch)
+            payload = from_value(env.payload) if env.payload is not None else {}
+            if not isinstance(payload, dict):
+                payload = {}
+            if not session_name or not tenant or not env.id or not payload.get("id"):
+                # A dead letter with no address cannot be retried meaningfully.
+                msg.term_no_dlq()
+                continue
+            resolved = {
+                "id": payload.get("id", ""),
+                "tenant": tenant,
+                "session_name": session_name,
+                "type": payload.get("type", ""),
+                "payload": payload.get("payload"),
+            }
+            if await handler(resolved):
+                msg.ack()
+            else:
+                msg.nak(5000)
 
     async def publish_session_event(self, tenant: str, session_name: str, event: str, params: Any) -> None:
         id_ = new_id()
