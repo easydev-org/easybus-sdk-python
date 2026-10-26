@@ -27,6 +27,7 @@ from easybus.bus import (
 )
 from easybus.identity import Fields as IdFields, Identity, auth_header, verify
 from easybus.protocol import subject_tenant, tenant_prefix, session_token
+from easybus.protocol.errors import is_absent_key, is_already_exists, is_lost_race
 from easybus.wire import (
     Envelope,
     KIND_TO_STRING,
@@ -319,8 +320,14 @@ class NatsBus:
         kv = await self._kv(bucket, ttl_ms)
         try:
             return await kv.create(key, value.encode("utf-8"))
-        except Exception:
-            return 0
+        except Exception as e:
+            # "already exists" is the normal LOSING side of a claim race: the caller reads 0 as
+            # "somebody else has it" and backs off. Every OTHER error is raised — swallowing them
+            # made a broken bucket indistinguishable from a lost race, so a replica that could not
+            # reach the broker believed another replica owned the session and never ran the turn.
+            if is_already_exists(e):
+                return 0
+            raise
 
     async def kv_put(self, bucket: str, key: str, value: str, ttl_ms: int) -> None:
         kv = await self._kv(bucket, ttl_ms)
@@ -331,15 +338,29 @@ class NatsBus:
             kv = await self._kv(bucket)
             e = await kv.get(key)
             return e.value.decode("utf-8") if e.value else ""
-        except Exception:
-            return ""
+        except Exception as e:
+            # A MISS, not a failure: the key is absent (deleted, or expired under a short TTL —
+            # the server reports "no message found" for that). Callers already treat "" as
+            # absent.
+            #
+            # Any OTHER error is raised. Swallowing everything made a dead connection or a
+            # missing bucket look exactly like "the key is not set", so a caller took its default
+            # branch and never retried.
+            if is_absent_key(e):
+                return ""
+            raise
 
     async def kv_cas(self, bucket: str, key: str, value: str, revision: int) -> int:
         try:
             kv = await self._kv(bucket)
             return await kv.update(key, value.encode("utf-8"), last=revision)
-        except Exception:
-            return 0
+        except Exception as e:
+            # A lost CAS is a normal outcome: 0 with NO error. Anything else is a real failure,
+            # and collapsing the two is what let a network blip abort a healthy in-flight turn —
+            # the caller reads 0 as "the lease was LOST".
+            if is_lost_race(e):
+                return 0
+            raise
 
     async def kv_delete(self, bucket: str, key: str) -> None:
         kv = await self._kv(bucket)

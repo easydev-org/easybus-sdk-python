@@ -18,6 +18,7 @@ import pytest
 
 from easybus.extension import Config, ConfigSpec, Extension
 from easybus.protocol import CONFIG_KV_BUCKET
+from easybus.protocol.errors import is_absent_key, is_consumer_gone, is_lost_race
 from easybus.transport.nats import connect
 
 CASES_DIR = pathlib.Path(__file__).resolve().parent.parent / "conformance-cases"
@@ -95,6 +96,44 @@ def test_shared_kv_case(path, nats_server):
     # the fixture's private one. Using the shared broker is the POINT of the container:
     # it is the pinned version every other SDK tests against.
     _run_kv(json.loads(path.read_text()), os.environ.get("EASYBUS_NATS_URL") or nats_server)
+
+
+@pytest.mark.parametrize("path", _cases_of_kind("error-classification"))
+def test_shared_error_classification_case(path):
+    """Pin how a transport error is CATEGORISED.
+
+    The shared half of the KV fix. Every SDK used to collapse every failure into a zero value
+    (``except Exception: return 0``), which made a lost race and a broken connection
+    indistinguishable. The zero value is CORRECT for a lost race and catastrophic for anything
+    else, so the category is the contract.
+
+    No broker: this is pure text matching, so it runs in the unit job.
+    """
+    case = json.loads(path.read_text())
+    entries = case.get("cases") or []
+    assert entries, f"{case['id']}: no cases"
+
+    for i, mc in enumerate(entries):
+        msg = mc.get("err") or ""
+        # An empty message means "no error at all".
+        err = None if msg == "" else RuntimeError(msg)
+
+        assert is_lost_race(err) is bool(mc.get("lostRace")), (
+            f"{case['id']} {i} is_lost_race({msg!r}): {mc.get('why')}"
+        )
+        assert is_absent_key(err) is bool(mc.get("absent")), (
+            f"{case['id']} {i} is_absent_key({msg!r}): {mc.get('why')}"
+        )
+        assert is_consumer_gone(err) is bool(mc.get("consumerGone")), (
+            f"{case['id']} {i} is_consumer_gone({msg!r}): {mc.get('why')}"
+        )
+
+        # The categories must be mutually exclusive: a fault belonging to two would make
+        # behaviour depend on clause order rather than on the fault.
+        hits = sum(
+            [is_lost_race(err), is_absent_key(err), is_consumer_gone(err)]
+        )
+        assert hits <= 1, f"{case['id']} {i} ({msg!r}): matches {hits} categories"
 
 
 @pytest.mark.integration
