@@ -46,7 +46,9 @@ CHANGED_WILDCARD = "easybus.*.session.changed"
 DLQ_WILDCARD = "easybus.*.dlq.>"
 DURABLE_CONSUMER = "easybus-mailbox-push"
 OBJECT_BUCKET = "EASYBUS_TOOL"
-OBJECT_BUCKET_DUR = "EASYBUS_FILES"
+# There is deliberately NO durable object bucket constant: persistent bytes live in an
+# S3-compatible backend and nowhere else. A NATS bucket for them made "a persistent file" mean S3
+# in one deployment and a broker stream in another, with identical code.
 
 
 def _build_envelope(kind: str, ch: str, payload: Any, tenant: str, id: str = "", session_name: str = "", reply_to: str = "") -> bytes:
@@ -102,6 +104,15 @@ async def _ensure_streams(js: JetStreamContext, opts: "Options") -> None:
             await js.add_stream(config=StreamConfig(name=name, subjects=subjects, max_age=max_age))
 
 
+class NoDurableObjectStoreError(RuntimeError):
+    """Raised when persistent file bytes are requested without an S3-compatible backend.
+
+    A fallback to the NATS object store would be a silent change of meaning, not a degradation:
+    the bytes would still be stored, in a place the operator did not choose. Refusing is the only
+    answer that gives "persistent" one meaning across deployments.
+    """
+
+
 class Options:
     def __init__(self, max_age_ns: int = 0, replicas: int = 0, identity: Identity | None = None) -> None:
         self.max_age_ns = max_age_ns
@@ -110,10 +121,19 @@ class Options:
 
 
 class NatsBus:
-    def __init__(self, nc: NatsClient, js: JetStreamContext, identity: Identity | None = None) -> None:
+    def __init__(
+        self,
+        nc: NatsClient,
+        js: JetStreamContext,
+        identity: Identity | None = None,
+        durable: Any = None,
+    ) -> None:
         self._nc = nc
         self._js = js
         self._idn = identity
+        # durable owns the PERSISTENT object path. None means "not configured", and the persistent
+        # methods refuse rather than quietly using the broker.
+        self._durable = durable
 
     # ---- auth helpers ------------------------------------------------------
 
@@ -254,18 +274,31 @@ class NatsBus:
             return None
 
     async def object_put_persistent(self, name: str, data: bytes) -> None:
-        os = await self._object_store(OBJECT_BUCKET_DUR, True)
-        await os.put(name, data)
+        """Persistent bytes have exactly ONE backend, and it is not NATS.
+
+        There used to be an OBJECT_BUCKET_DUR fallback here. That is not a degradation but a
+        silent change of meaning: the bytes were still stored (so nothing errored), in a place the
+        operator did not choose, under the broker's retention rules instead of S3's durability.
+        Two deployments running identical code answered "where is this file" differently, and only
+        the config said which.
+
+        The TRANSIENT bucket is untouched: those bytes are in-flight hand-off with a 24h TTL, so
+        the broker is their correct home.
+        """
+        if self._durable is None:
+            raise NoDurableObjectStoreError(
+                "no durable object store configured: persistent files require an "
+                "S3-compatible backend"
+            )
+        await self._durable.object_put_persistent(name, data)
 
     async def object_get_persistent(self, name: str) -> bytes | None:
-        os = await self._object_store(OBJECT_BUCKET_DUR, False)
-        if os is None:
-            return None
-        try:
-            res = await os.get(name)
-            return res.data
-        except Exception:
-            return None
+        if self._durable is None:
+            raise NoDurableObjectStoreError(
+                "no durable object store configured: persistent files require an "
+                "S3-compatible backend"
+            )
+        return await self._durable.object_get_persistent(name)
 
     # ---- KV ----------------------------------------------------------------
 
